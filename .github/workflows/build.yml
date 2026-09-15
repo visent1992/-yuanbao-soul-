@@ -10,7 +10,7 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y git zip unzip openjdk-17-jdk
-        pip install --upgrade pip buildozer cython==0.29.36
+        pip install buildozer==1.5.0 cython==0.29.36
     - name: Clean old build cache
       run: rm -rf .buildozer
     - name: Build APK
