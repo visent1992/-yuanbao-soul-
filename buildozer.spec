@@ -5,7 +5,7 @@ package.domain = com.yuanbao
 source.dir = .
 source.include_exts = py,png,jpg,kv,json,db
 version = 0.1
-requirements = python3==3.11.0,kivy==2.3.0,plyer,requests,cython==0.29.36
+requirements = python3,kivy==2.3.0,plyer,requests,cython==0.29.36
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET,POST_NOTIFICATIONS
