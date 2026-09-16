@@ -5,6 +5,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
 
@@ -26,10 +27,17 @@ jobs:
         python -m pip install --upgrade pip
         pip install "buildozer==1.5.0" "cython==0.29.36"
 
+    - name: Cache buildozer
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.buildozer
+          .buildozer
+        key: buildozer-${{ runner.os }}-v1
+
     - name: Deep clean
       run: |
-        rm -rf .buildozer bin build
-        rm -rf ~/.buildozer
+        rm -rf .buildozer/bin build
         mkdir -p bin
 
     - name: Sanity check
@@ -37,8 +45,9 @@ jobs:
         echo "PWD: $(pwd)"
         ls -la
         test -f main.py && echo "main.py OK" || echo "main.py MISSING"
+        test -f buildozer.spec && echo "spec OK" || echo "spec MISSING"
 
-    - name: Build APK (capture real error)
+    - name: Build APK (强制暴露错误+防折叠)
       env:
         MAKEFLAGS: "-j1"
         CFLAGS: "-Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration -Wno-error=cast-function-type-strict"
@@ -47,9 +56,26 @@ jobs:
         ANDROID_NDK_HOME: ""
         NDK_ROOT: ""
       run: |
-        set -x
+        set -eo pipefail
+        echo "::group::Buildozer Full Log"
         buildozer -v android debug --arch=arm64-v8a 2>&1 | tee build.log
-        echo "EXIT=${PIPESTATUS[0]}"
+        BUILD_EXIT=${PIPESTATUS[0]}
+        echo "::endgroup::"
+        echo "BUILD_REAL_EXIT=$BUILD_EXIT"
+        if [ $BUILD_EXIT -ne 0 ]; then
+          echo "===== 崩溃前最后 80 行 ====="
+          tail -n 80 build.log
+          exit $BUILD_EXIT
+        fi
+      timeout-minutes: 45
+
+    - name: Check build output
+      if: always()
+      run: |
+        echo "===== Root bin/ ====="
+        ls -R bin/ 2>/dev/null || echo "No bin/ at root"
+        echo "===== All .apk files ====="
+        find . -name "*.apk" -print 2>/dev/null || echo "NO APK FOUND"
 
     - name: Show crash context
       if: always()
