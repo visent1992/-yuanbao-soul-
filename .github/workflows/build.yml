@@ -1,26 +1,3 @@
-name: Build APK
-on:
-  workflow_dispatch:
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install system deps
-      run: |
-        sudo apt update
-        sudo apt install -y git zip unzip openjdk-17-jdk \
-          pkg-config libssl-dev libffi-dev \
-          libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
-          libfreetype6-dev libharfbuzz-dev \
-          zlib1g-dev libjpeg-dev libpng-dev
-
-    - name: Install python tools
-      run: |
-        pip install --upgrade pip
-        pip install "buildozer==1.5.0" "cython==0.29.36"
-
     - name: Force clean old cache
       run: rm -rf .buildozer bin build
 
@@ -32,12 +9,26 @@ jobs:
         PYTHONIOENCODING: "utf-8"
       run: buildozer -v android debug --arch=arm64-v8a 2>&1 | tee build.log
 
-    - name: Upload APK
+    # 新增：打印目录树，确认 APK 到底生成在哪
+    - name: Check build output dirs
+      if: always()
+      run: |
+        echo "--- Root bin/ ---"
+        ls -R bin/ 2>/dev/null || echo "No bin/ at root"
+        echo "--- .buildozer dists bin/ ---"
+        find .buildozer -name "*.apk" -print 2>/dev/null || echo "No apk in .buildozer"
+        echo "--- All .apk files ---"
+        find . -name "*.apk" -print 2>/dev/null
+
+    - name: Upload APK (Wildcard fallback)
       if: success()
       uses: actions/upload-artifact@v4
       with:
         name: yuanbao-soul-apk
-        path: bin/*.apk
+        path: |
+          bin/*.apk
+          .buildozer/**/*.apk
+        if-no-files-found: warn
 
     - name: Upload build log (for debug)
       if: always()
