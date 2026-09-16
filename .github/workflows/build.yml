@@ -1,6 +1,36 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # 1. 安装系统级依赖（SDL2 / harfbuzz / openssl 等全套）
+    - name: Install system deps
+      run: |
+        sudo apt update
+        sudo apt install -y git zip unzip openjdk-17-jdk \
+          pkg-config libssl-dev libffi-dev \
+          libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
+          libfreetype6-dev libharfbuzz-dev \
+          zlib1g-dev libjpeg-dev libpng-dev
+
+    # 2. 安装 Python 侧工具（锁定稳定版本组合）
+    - name: Install python tools
+      run: |
+        pip install --upgrade pip
+        pip install "buildozer==1.5.0" "cython==0.29.36"
+
+    # 3. 强制清理旧缓存，确保完全冷启动（防半截编译 / 误判无需重编）
     - name: Force clean old cache
       run: rm -rf .buildozer bin build
 
+    # 4. 执行构建（单架构 + 限并发 + 屏蔽严格报错）
     - name: Build APK
       env:
         MAKEFLAGS: "-j1"
@@ -9,18 +39,17 @@
         PYTHONIOENCODING: "utf-8"
       run: buildozer -v android debug --arch=arm64-v8a 2>&1 | tee build.log
 
-    # 新增：打印目录树，确认 APK 到底生成在哪
+    # 5. 打印目录树，确认 APK 实际生成路径（排查用）
     - name: Check build output dirs
       if: always()
       run: |
         echo "--- Root bin/ ---"
         ls -R bin/ 2>/dev/null || echo "No bin/ at root"
-        echo "--- .buildozer dists bin/ ---"
-        find .buildozer -name "*.apk" -print 2>/dev/null || echo "No apk in .buildozer"
         echo "--- All .apk files ---"
-        find . -name "*.apk" -print 2>/dev/null
+        find . -name "*.apk" -print 2>/dev/null || echo "No apk found"
 
-    - name: Upload APK (Wildcard fallback)
+    # 6. 上传 APK（通配符兜底，覆盖 bin/ 与 .buildozer 两种产物路径）
+    - name: Upload APK
       if: success()
       uses: actions/upload-artifact@v4
       with:
@@ -30,7 +59,8 @@
           .buildozer/**/*.apk
         if-no-files-found: warn
 
-    - name: Upload build log (for debug)
+    # 7. 无论成败都上传完整日志，方便排查
+    - name: Upload build log
       if: always()
       uses: actions/upload-artifact@v4
       with:
