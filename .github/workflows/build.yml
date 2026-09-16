@@ -21,7 +21,7 @@ jobs:
         pip install --upgrade pip
         pip install "buildozer==1.5.0" "cython==0.29.36"
 
-    - name: Force deep clean (kill all caches)
+    - name: Force deep clean
       run: |
         rm -rf .buildozer bin build
         rm -rf ~/.local/share/python-for-android
@@ -33,29 +33,36 @@ jobs:
         CFLAGS: "-Wno-error=cast-function-type-strict -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration"
         CXXFLAGS: "-Wno-error=cast-function-type-strict -Wno-error=incompatible-pointer-types"
         PYTHONIOENCODING: "utf-8"
-      run: buildozer -v android debug --arch=arm64-v8a 2>&1 | tee build.log
+        # 强制隔离 GitHub Runner 自带的 NDK 27，强制使用 buildozer 下载的 r25b
+        ANDROID_NDK_ROOT: ""
+        ANDROID_NDK_HOME: ""
+        NDK_ROOT: ""
+        # 暴露真实报错
+        BUILDOZER_LOG_LEVEL: "2"
+      run: |
+        echo "--- Start Build ---"
+        buildozer -v android debug --arch=arm64-v8a 2>&1 | tee build.log
+        echo "--- Build Exit Code: $? ---"
 
-    - name: Check build output dirs (Debug Tree)
+    - name: Check build output
       if: always()
       run: |
         echo "===== Root bin/ ====="
         ls -R bin/ 2>/dev/null || echo "No bin/ at root"
-        echo "===== All .apk files recursively ====="
-        find . -name "*.apk" -print 2>/dev/null || echo "NO APK FOUND ANYWHERE"
-        echo "===== .buildozer dists bin/ ====="
-        find .buildozer -path "*/bin/*.apk" -print 2>/dev/null || echo "No apk in .buildozer"
-        echo "===== Disk usage of .buildozer ====="
-        du -sh .buildozer 2>/dev/null || echo "No .buildozer dir"
+        echo "===== All .apk files ====="
+        find . -name "*.apk" -print 2>/dev/null || echo "NO APK FOUND"
+        echo "===== .buildozer size ====="
+        du -sh .buildozer 2>/dev/null || echo "No .buildozer"
 
-    - name: Fail if no APK generated
+    - name: Fail if no APK
       if: success()
       run: |
         if [ -z "$(find . -name '*.apk' -print -quit 2>/dev/null)" ]; then
-          echo "::error::Build finished but NO APK was generated. Check 'Check build output dirs' step."
+          echo "::error::Build finished but NO APK generated."
           exit 1
         fi
 
-    - name: Upload APK (Wildcard fallback multi-path)
+    - name: Upload APK
       if: success()
       uses: actions/upload-artifact@v4
       with:
@@ -66,7 +73,7 @@ jobs:
           .buildozer/**/bin/*.apk
         if-no-files-found: error
 
-    - name: Upload build log (for debug)
+    - name: Upload build log
       if: always()
       uses: actions/upload-artifact@v4
       with:
