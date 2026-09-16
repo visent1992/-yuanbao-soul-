@@ -8,7 +8,7 @@ source.include_exts = py,png,jpg,kv,json,db,ttf,atlas
 
 version = 0.1
 
-requirements = python3==3.11.9,kivy==2.3.0,cython==0.29.36,plyer,requests
+requirements = python3==3.11,kivy==2.3.0,cython==0.29.36,plyer,requests
 
 orientation = portrait
 fullscreen = 0
