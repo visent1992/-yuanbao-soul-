@@ -1,6 +1,7 @@
 name: Build APK
 on:
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -13,68 +14,50 @@ jobs:
         sudo apt install -y git zip unzip openjdk-17-jdk \
           pkg-config libssl-dev libffi-dev \
           libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
-          libfreetype6-dev libharfbuzz-dev \
-          zlib1g-dev libjpeg-dev libpng-dev
+          libfreetype6-dev libharfbuzz-dev zlib1g-dev libjpeg-dev libpng-dev
 
-    - name: Install python tools
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install buildozer
       run: |
-        pip install --upgrade pip
+        python -m pip install --upgrade pip
         pip install "buildozer==1.5.0" "cython==0.29.36"
 
-    - name: Force deep clean
+    - name: Deep clean
       run: |
         rm -rf .buildozer bin build
-        rm -rf ~/.local/share/python-for-android
+        rm -rf ~/.buildozer
         mkdir -p bin
 
-    - name: Debug source dir (定位文件状态)
+    - name: Sanity check
       run: |
-        echo "=== PWD ==="
-        pwd
-        echo "=== 根目录文件列表 ==="
+        echo "PWD: $(pwd)"
         ls -la
-        echo "=== main.py 确认 ==="
-        ls -l main.py
-        echo "=== buildozer.spec 确认 ==="
-        ls -l buildozer.spec
-        echo "=== main.py 头部内容 ==="
-        head -5 main.py 2>/dev/null || echo "读取失败"
+        test -f main.py && echo "main.py OK" || echo "main.py MISSING"
 
-    - name: Build APK (开启最高日志级别+强制捕获)
+    - name: Build APK (capture real error)
       env:
         MAKEFLAGS: "-j1"
-        CFLAGS: "-Wno-error=cast-function-type-strict -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration"
-        CXXFLAGS: "-Wno-error=cast-function-type-strict -Wno-error=incompatible-pointer-types"
-        PYTHONIOENCODING: "utf-8"
+        CFLAGS: "-Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration -Wno-error=cast-function-type-strict"
+        CXXFLAGS: "-Wno-error=incompatible-pointer-types -Wno-error=cast-function-type-strict"
         ANDROID_NDK_ROOT: ""
         ANDROID_NDK_HOME: ""
         NDK_ROOT: ""
       run: |
-        echo "--- Start Build ---"
-        # 强制开启 debug 级别日志，不使用 -v 避免被吞
-        buildozer --log-level 2 android debug --arch=arm64-v8a 2>&1 | tee build.log
-        EXIT_CODE=${PIPESTATUS[0]}
-        echo "--- Build Exit Code: $EXIT_CODE ---"
-        if [ $EXIT_CODE -ne 0 ]; then
-          echo "===== 崩溃前最后 50 行 ====="
-          tail -n 50 build.log
-        fi
+        set -x
+        buildozer -v android debug --arch=arm64-v8a 2>&1 | tee build.log
+        echo "EXIT=${PIPESTATUS[0]}"
 
-    - name: Check build output
+    - name: Show crash context
       if: always()
       run: |
-        echo "===== Root bin/ ====="
-        ls -R bin/ 2>/dev/null || echo "No bin/ at root"
-        echo "===== All .apk files ====="
-        find . -name "*.apk" -print 2>/dev/null || echo "NO APK FOUND"
-
-    - name: Fail if no APK
-      if: success()
-      run: |
-        if [ -z "$(find . -name '*.apk' -print -quit 2>/dev/null)" ]; then
-          echo "::error::Build finished but NO APK generated."
-          exit 1
-        fi
+        echo "===== grep error ====="
+        grep -nE "error:|Traceback|Exception|FileNotFound|No such file|Command failed|exit code" build.log | tail -n 40
+        echo "===== tail ====="
+        tail -n 60 build.log
 
     - name: Upload build log
       if: always()
@@ -88,7 +71,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: yuanbao-soul-apk
-        path: |
-          bin/*.apk
-          **/*.apk
-        if-no-files-found: error
+        path: bin/*.apk
