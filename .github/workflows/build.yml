@@ -27,22 +27,38 @@ jobs:
         rm -rf ~/.local/share/python-for-android
         mkdir -p bin
 
-    - name: Build APK
+    - name: Debug source dir (定位文件状态)
+      run: |
+        echo "=== PWD ==="
+        pwd
+        echo "=== 根目录文件列表 ==="
+        ls -la
+        echo "=== main.py 确认 ==="
+        ls -l main.py
+        echo "=== buildozer.spec 确认 ==="
+        ls -l buildozer.spec
+        echo "=== main.py 头部内容 ==="
+        head -5 main.py 2>/dev/null || echo "读取失败"
+
+    - name: Build APK (开启最高日志级别+强制捕获)
       env:
         MAKEFLAGS: "-j1"
         CFLAGS: "-Wno-error=cast-function-type-strict -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration"
         CXXFLAGS: "-Wno-error=cast-function-type-strict -Wno-error=incompatible-pointer-types"
         PYTHONIOENCODING: "utf-8"
-        # 强制隔离 GitHub Runner 自带的 NDK 27，强制使用 buildozer 下载的 r25b
         ANDROID_NDK_ROOT: ""
         ANDROID_NDK_HOME: ""
         NDK_ROOT: ""
-        # 暴露真实报错
-        BUILDOZER_LOG_LEVEL: "2"
       run: |
         echo "--- Start Build ---"
-        buildozer -v android debug --arch=arm64-v8a 2>&1 | tee build.log
-        echo "--- Build Exit Code: $? ---"
+        # 强制开启 debug 级别日志，不使用 -v 避免被吞
+        buildozer --log-level 2 android debug --arch=arm64-v8a 2>&1 | tee build.log
+        EXIT_CODE=${PIPESTATUS[0]}
+        echo "--- Build Exit Code: $EXIT_CODE ---"
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo "===== 崩溃前最后 50 行 ====="
+          tail -n 50 build.log
+        fi
 
     - name: Check build output
       if: always()
@@ -51,8 +67,6 @@ jobs:
         ls -R bin/ 2>/dev/null || echo "No bin/ at root"
         echo "===== All .apk files ====="
         find . -name "*.apk" -print 2>/dev/null || echo "NO APK FOUND"
-        echo "===== .buildozer size ====="
-        du -sh .buildozer 2>/dev/null || echo "No .buildozer"
 
     - name: Fail if no APK
       if: success()
@@ -62,6 +76,13 @@ jobs:
           exit 1
         fi
 
+    - name: Upload build log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build.log
+
     - name: Upload APK
       if: success()
       uses: actions/upload-artifact@v4
@@ -70,12 +91,4 @@ jobs:
         path: |
           bin/*.apk
           **/*.apk
-          .buildozer/**/bin/*.apk
         if-no-files-found: error
-
-    - name: Upload build log
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-log
-        path: build.log
