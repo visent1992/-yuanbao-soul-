@@ -1,16 +1,12 @@
 name: Build APK
-
 on:
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
     - uses: actions/checkout@v4
 
-    # 1. 安装系统级依赖（SDL2 / harfbuzz / openssl 等全套）
     - name: Install system deps
       run: |
         sudo apt update
@@ -20,17 +16,17 @@ jobs:
           libfreetype6-dev libharfbuzz-dev \
           zlib1g-dev libjpeg-dev libpng-dev
 
-    # 2. 安装 Python 侧工具（锁定稳定版本组合）
     - name: Install python tools
       run: |
         pip install --upgrade pip
         pip install "buildozer==1.5.0" "cython==0.29.36"
 
-    # 3. 强制清理旧缓存，确保完全冷启动（防半截编译 / 误判无需重编）
-    - name: Force clean old cache
-      run: rm -rf .buildozer bin build
+    - name: Force deep clean (kill all caches)
+      run: |
+        rm -rf .buildozer bin build
+        rm -rf ~/.local/share/python-for-android
+        mkdir -p bin
 
-    # 4. 执行构建（单架构 + 限并发 + 屏蔽严格报错）
     - name: Build APK
       env:
         MAKEFLAGS: "-j1"
@@ -39,28 +35,38 @@ jobs:
         PYTHONIOENCODING: "utf-8"
       run: buildozer -v android debug --arch=arm64-v8a 2>&1 | tee build.log
 
-    # 5. 打印目录树，确认 APK 实际生成路径（排查用）
-    - name: Check build output dirs
+    - name: Check build output dirs (Debug Tree)
       if: always()
       run: |
-        echo "--- Root bin/ ---"
+        echo "===== Root bin/ ====="
         ls -R bin/ 2>/dev/null || echo "No bin/ at root"
-        echo "--- All .apk files ---"
-        find . -name "*.apk" -print 2>/dev/null || echo "No apk found"
+        echo "===== All .apk files recursively ====="
+        find . -name "*.apk" -print 2>/dev/null || echo "NO APK FOUND ANYWHERE"
+        echo "===== .buildozer dists bin/ ====="
+        find .buildozer -path "*/bin/*.apk" -print 2>/dev/null || echo "No apk in .buildozer"
+        echo "===== Disk usage of .buildozer ====="
+        du -sh .buildozer 2>/dev/null || echo "No .buildozer dir"
 
-    # 6. 上传 APK（通配符兜底，覆盖 bin/ 与 .buildozer 两种产物路径）
-    - name: Upload APK
+    - name: Fail if no APK generated
+      if: success()
+      run: |
+        if [ -z "$(find . -name '*.apk' -print -quit 2>/dev/null)" ]; then
+          echo "::error::Build finished but NO APK was generated. Check 'Check build output dirs' step."
+          exit 1
+        fi
+
+    - name: Upload APK (Wildcard fallback multi-path)
       if: success()
       uses: actions/upload-artifact@v4
       with:
         name: yuanbao-soul-apk
         path: |
           bin/*.apk
-          .buildozer/**/*.apk
-        if-no-files-found: warn
+          **/*.apk
+          .buildozer/**/bin/*.apk
+        if-no-files-found: error
 
-    # 7. 无论成败都上传完整日志，方便排查
-    - name: Upload build log
+    - name: Upload build log (for debug)
       if: always()
       uses: actions/upload-artifact@v4
       with:
