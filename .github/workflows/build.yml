@@ -50,8 +50,6 @@ jobs:
     - name: Build APK (强制暴露错误+防折叠)
       env:
         MAKEFLAGS: "-j1"
-        CFLAGS: "-Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration -Wno-error=cast-function-type-strict"
-        CXXFLAGS: "-Wno-error=incompatible-pointer-types -Wno-error=cast-function-type-strict"
         ANDROID_NDK_ROOT: ""
         ANDROID_NDK_HOME: ""
         NDK_ROOT: ""
